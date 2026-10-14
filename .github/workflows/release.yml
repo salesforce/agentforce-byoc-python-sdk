@@ -1,0 +1,59 @@
+name: Publish to PyPI
+
+on:
+  release:
+    types: [published]
+
+jobs:
+  validate-release:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pre-release / tag consistency
+        env:
+          TAG_NAME: ${{ github.event.release.tag_name }}
+          IS_PRERELEASE: ${{ github.event.release.prerelease }}
+        run: |
+          if printf '%s' "$TAG_NAME" | grep -qE '(\.dev|a|b|rc)[0-9]+'; then
+            PEP440_PRE="true"
+          else
+            PEP440_PRE="false"
+          fi
+
+          if [ "$IS_PRERELEASE" = "true" ] && [ "$PEP440_PRE" = "false" ]; then
+            echo "::error::Release is marked pre-release but tag '$TAG_NAME' is a stable version. Use a PEP 440 pre-release suffix (e.g. .dev1, rc1)."
+            exit 1
+          fi
+
+          if [ "$IS_PRERELEASE" = "false" ] && [ "$PEP440_PRE" = "true" ]; then
+            echo "::error::Tag '$TAG_NAME' has a pre-release suffix but the release is not marked as a pre-release. Check the 'Set as a pre-release' box."
+            exit 1
+          fi
+
+          echo "Release consistency check passed: tag=$TAG_NAME, prerelease=$IS_PRERELEASE"
+
+  publish:
+    needs: validate-release
+    runs-on: ubuntu-latest
+    environment:
+      name: pypi
+      url: https://pypi.org/project/sfdc-agentforce-byoc-python-sdk/
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Full history + tags so poetry-dynamic-versioning resolves the release version.
+          fetch-depth: 0
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+      - name: Install Poetry
+        run: |
+          python -m pip install --upgrade pip
+          pip install poetry "poetry-dynamic-versioning>=1.0.0,<2.0.0"
+      - name: Install project dependencies
+        run: poetry install --only main --no-interaction
+      - name: Build package
+        run: make package
+      - name: Publish to PyPI
+        env:
+          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
+        run: poetry publish --username __token__ --password "$PYPI_TOKEN"

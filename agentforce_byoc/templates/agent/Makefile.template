@@ -1,0 +1,51 @@
+# Makefile for {{project_name}}
+
+.PHONY: help
+help: ## Show this help message
+	@echo "{{project_name}} - Agentforce BYOC Agent"
+	@echo ""
+	@echo "Available targets:"
+	@grep -E '^[a-zA-Z_-]+:.*?## .*$$' $(MAKEFILE_LIST) | awk 'BEGIN {FS = ":.*?## "}; {printf "  %-20s %s\n", $$1, $$2}'
+
+.PHONY: install
+install: ## Install dependencies with Poetry
+	poetry install
+
+.PHONY: run
+run: ## Run the agent locally (requires ORG_JWT_TOKEN + SFDC_CORE_TENANT_ID + SFDC_USER_ID + SFDC_APP_CONTEXT env vars)
+	@echo "Make sure ORG_JWT_TOKEN, SFDC_CORE_TENANT_ID, SFDC_USER_ID, and SFDC_APP_CONTEXT are set:"
+	@echo "  export ORG_JWT_TOKEN=<org-jwt>"
+	@echo "  export SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id>"
+	@echo "  export SFDC_USER_ID=<user-id>"
+	@echo "  export SFDC_APP_CONTEXT=<app-context>"
+	@echo ""
+	poetry run agentforce run main.py
+
+.PHONY: test
+test: ## Run tests
+	poetry run pytest
+
+.PHONY: format
+format: ## Format code with black
+	poetry run black .
+
+.PHONY: validate
+validate: ## Validate agent package
+	poetry run agentforce validate .
+
+.PHONY: zip
+zip: ## Create a deployment-ready package archive
+	poetry run agentforce zip --package-dir .
+
+.PHONY: package
+package: ## Build end-to-end: validate -> run -> zip
+	poetry run agentforce package .
+
+.PHONY: deploy
+deploy: ## Register + upload to Agentforce BYOC, then poll status (requires ORG_JWT_TOKEN + SFDC_CORE_TENANT_ID + SFDC_USER_ID + SFDC_APP_CONTEXT env vars)
+	poetry run agentforce deploy --package-name "{{project_name}}" --package-file {{project_name}}-0.1.0.tar.gz
+	poetry run agentforce deploy-status --package-name "{{project_name}}" --version 1.0
+
+.PHONY: clean
+clean: ## Clean build artifacts
+	rm -rf dist/ build/ *.egg-info .pytest_cache __pycache__

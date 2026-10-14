@@ -1,0 +1,358 @@
+# {{project_name}}
+
+Agentforce BYOC Function created with the Agentforce SDK.
+
+## Overview
+
+This is a BYOC (Bring Your Own Code) function that can be deployed to Salesforce and executed within Agentforce workflows. Functions are defined using decorators for schema validation and can be tested locally or deployed to Salesforce.
+
+## Project Structure
+
+```
+{{project_name}}/
+├── main.py               # Your function implementation with decorators
+├── entry_func.py         # Schema decorator utilities (entry point)
+├── schema.py             # Schema decorators (request/response)
+├── agentforce_byoc/      # Vendored SDK (until it's published to PyPI)
+├── config.json           # Function configuration (entryPoint)
+├── Dockerfile            # Container definition for deployment
+├── pyproject.toml        # Python dependencies (Poetry)
+├── .python-version       # Python 3.11
+├── .gitignore            # Git ignore patterns
+├── .dockerignore         # Docker ignore patterns
+├── Makefile              # Development tasks
+└── README.md             # This file
+```
+
+> `agentforce_byoc/` is a copy of the SDK runtime, vendored by `agentforce init`
+> because the SDK isn't on PyPI yet. It's what lets your deployed package
+> `import agentforce_byoc`. When the SDK is published, this directory goes away
+> and it becomes a normal dependency.
+
+## Quick Start
+
+### 1. Install Dependencies
+
+```bash
+poetry install
+```
+
+### 2. Test Locally
+
+Set your credentials, then run the agent against the Agentforce BYOC runtime:
+
+```bash
+export ORG_JWT_TOKEN=<org-jwt>
+export SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id>
+export SFDC_USER_ID=<user-id>
+export SFDC_APP_CONTEXT=<app-context>
+agentforce run main.py
+```
+
+### 3. Implement Your Function
+
+Edit `main.py` and define your schemas:
+
+```python
+# TODO: Define your function schemas here
+class MyRequest(TypedDict):
+    input_text: str
+    max_length: int
+
+class MyResponse(TypedDict):
+    output_text: str
+    status: str
+
+@entry_func
+@requestSchema(MyRequest)
+@responseSchema(MyResponse)
+def function(request: dict) -> dict:
+    # Your implementation
+    return {"output_text": "result", "status": "success"}
+```
+
+## Running Locally
+
+Run against the Agentforce BYOC runtime. Set your credentials first (the
+command aborts with instructions if they're unset):
+
+```bash
+export ORG_JWT_TOKEN=<org-jwt>
+export SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id>
+export SFDC_USER_ID=<user-id>
+export SFDC_APP_CONTEXT=<app-context>
+agentforce run main.py
+```
+
+`run` executes your function on this machine; relay calls go out to the real
+Agentforce service. The tenant id, user id, and app context are read from the
+environment (`SFDC_CORE_TENANT_ID` / `SFDC_USER_ID` / `SFDC_APP_CONTEXT`).
+
+---
+
+## Function Schema Definition
+
+Your function uses decorators to define input/output schemas:
+
+### `@entry_func`
+Marks the function as a BYOC entry point.
+
+### `@requestSchema(TypedDictClass)`
+Declares the expected request structure.
+
+### `@responseSchema(TypedDictClass)`
+Declares the expected response structure.
+
+**Example:**
+```python
+from typing import TypedDict, List
+
+class MyRequest(TypedDict):
+    items: List[str]
+    separator: str
+
+class MyResponse(TypedDict):
+    result: str
+    status: str
+
+@entry_func
+@requestSchema(MyRequest)
+@responseSchema(MyResponse)
+def function(request: dict) -> dict:
+    items = request.get("items", [])
+    separator = request.get("separator", " ")
+
+    return {
+        "result": separator.join(items),
+        "status": "success"
+    }
+```
+
+## Configuration
+
+### config.json
+
+Simple configuration with function entry point:
+
+```json
+{
+  "entryPoint": "main.py"
+}
+```
+
+This tells the runtime which file contains your function.
+
+## Adding Dependencies
+
+```bash
+# Add a package
+poetry add <package-name>
+
+# Add a dev dependency
+poetry add --dev <package-name>
+
+# Update all dependencies
+poetry update
+```
+
+**Example:**
+```bash
+poetry add requests pandas numpy
+poetry add --dev pytest black mypy
+```
+
+## Building and Deploying
+
+### 1. Package Your Function
+
+Create a deployment-ready gzip tar archive:
+
+```bash
+agentforce zip .
+```
+
+This creates `{{project_name}}-0.1.0.tar.gz` containing:
+- `main.py` - Your function code
+- `entry_func.py` - Schema decorators
+- `schema.py` - Schema validation
+- `config.json` - Configuration
+- `Dockerfile` - Container definition
+- `pyproject.toml` - Dependencies
+- `requirements.txt` - Exported dependencies
+
+You can also build end-to-end (validate → run → zip) in one step:
+
+```bash
+agentforce package .
+```
+
+### 2. Deploy to Agentforce BYOC
+
+Auth and identity come from environment variables (required — commands abort if unset):
+
+```bash
+export ORG_JWT_TOKEN=<org-jwt>
+export SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id>
+export SFDC_USER_ID=<user-id>
+export SFDC_APP_CONTEXT=<app-context>
+```
+
+Then deploy in one step — `deploy` registers the metadata **and** uploads the
+archive — and optionally poll the status:
+
+```bash
+# Register + upload: registers metadata AND PUTs the package to the presigned URL
+agentforce deploy --package-name {{project_name}} --package-file {{project_name}}-0.1.0.tar.gz
+
+# (Optional) Poll status — read-only: reports registrationStatus + uploadStatus
+agentforce deploy-status --package-name {{project_name}} --version 1.0
+```
+
+**Environment variables (used by `deploy`, `deploy-status`, and `run` — all four required):**
+- `ORG_JWT_TOKEN` - Org JWT for authentication (required)
+- `SFDC_CORE_TENANT_ID` - core tenant id `core/<instance>-<fd>/<org-id>` (required)
+- `SFDC_USER_ID` - caller's user id (sent as `x-sfdc-user-id`)
+- `SFDC_APP_CONTEXT` - app context (sent as `x-sfdc-app-context`)
+
+**`deploy` options:**
+- `--package-name <name>` - Package name (required)
+- `--package-file <path>` - Package archive from `agentforce zip` (required)
+- `--entry-point <file>` - Function entry point (default: main.py)
+- `--version <ver>` - Package version (default: 1.0)
+- `--max-live-duration <seconds>` - Max live duration (default: 300)
+
+**`deploy-status` options:** (read-only poll — never writes)
+- `--package-name <name>` - Package name (required)
+- `--version <ver>` - Package version (default: 1.0)
+
+## Development Workflow
+
+```bash
+# 1. Set credentials (all four required for run, deploy, and deploy-status)
+export ORG_JWT_TOKEN=<org-jwt>
+export SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id>
+export SFDC_USER_ID=<user-id>
+export SFDC_APP_CONTEXT=<app-context>
+
+# 2. Develop + test locally against the Agentforce BYOC runtime
+agentforce run main.py
+
+# 3. Package
+agentforce zip .                             # Create deployment archive
+
+# 4. Deploy: register + upload in one step, then optionally poll status
+agentforce deploy --package-name {{project_name}} --package-file {{project_name}}-0.1.0.tar.gz
+agentforce deploy-status --package-name {{project_name}} --version 1.0
+```
+
+## Testing
+
+### Unit Tests
+
+Create a `tests/` directory:
+
+```bash
+mkdir tests
+poetry add --dev pytest
+```
+
+**Example test (`tests/test_main.py`):**
+```python
+from main import function
+
+def test_function_missing_input():
+    # No text -> error, no relay call
+    response = function({})
+    assert response["status"] == "error"
+```
+
+> The success path calls the relay (a network request needing a valid
+> `ORG_JWT_TOKEN`), so mock the relay client or test it as an integration test
+> rather than a plain unit test.
+
+**Run tests:**
+```bash
+poetry run pytest
+poetry run pytest --cov=main
+```
+
+## Docker
+
+Build and test locally with Docker:
+
+```bash
+# Build container
+docker build -t {{project_name}}:latest .
+
+# Run container
+docker run --rm {{project_name}}:latest
+
+# Run with environment variables
+docker run --rm \
+  -e ORG_JWT_TOKEN=<org-jwt> \
+  {{project_name}}:latest
+```
+
+## Troubleshooting
+
+### Function fails locally
+
+1. Check Python version: `python --version` (should be 3.11+)
+2. Install dependencies: `poetry install`
+3. Check imports in `main.py`
+4. Verify `ORG_JWT_TOKEN`, `SFDC_CORE_TENANT_ID`, `SFDC_USER_ID`, and `SFDC_APP_CONTEXT` are exported
+
+### Agentforce BYOC runtime fails
+
+1. Check `ORG_JWT_TOKEN` is set: `echo $ORG_JWT_TOKEN`
+2. Verify the JWT is valid and not expired
+3. Check `SFDC_CORE_TENANT_ID` is set and well-formed (core/<instance>-<fd>/<org-id>)
+4. Check `SFDC_USER_ID` is set (relay sends it as `x-sfdc-user-id`)
+5. Check `SFDC_APP_CONTEXT` is set (relay sends it as `x-sfdc-app-context`)
+
+### Deployment fails
+
+1. Verify `ORG_JWT_TOKEN`, `SFDC_CORE_TENANT_ID`, `SFDC_USER_ID`, and `SFDC_APP_CONTEXT` env vars are set (commands abort if unset)
+2. Check the JWT is valid and not expired
+3. Check package structure: `tar -tzf {{project_name}}-*.tar.gz`
+
+## CLI Command Reference
+
+```bash
+# Initialize new function
+agentforce init <name>
+
+# Run locally (requires ORG_JWT_TOKEN + SFDC_CORE_TENANT_ID + SFDC_USER_ID + SFDC_APP_CONTEXT)
+agentforce run main.py
+
+# Package for deployment
+agentforce zip .
+agentforce zip . --output custom-name.tar.gz
+
+# Build end-to-end (validate -> run -> zip)
+agentforce package .
+
+# Deploy to Agentforce BYOC (set ORG_JWT_TOKEN + SFDC_CORE_TENANT_ID + SFDC_USER_ID + SFDC_APP_CONTEXT env vars first)
+agentforce deploy --package-name <name> --package-file <name>-0.1.0.tar.gz
+agentforce deploy-status --package-name <name> --version 1.0
+
+# Get help
+agentforce --help
+agentforce run --help
+```
+
+## Environment Variables
+
+### Agentforce BYOC Runtime
+```bash
+ORG_JWT_TOKEN=<org-jwt>                           # Required
+SFDC_CORE_TENANT_ID=core/<instance>-<fd>/<org-id> # Required
+SFDC_USER_ID=<user-id>                            # Required by run + deploy
+SFDC_APP_CONTEXT=<app-context>                    # Required by run + deploy
+```
+
+## Learn More
+
+- [Agentforce BYOC SDK Documentation](https://github.com/salesforce/agentforce-byoc-python-sdk)
+- [Poetry Documentation](https://python-poetry.org/docs/)
+- [TypedDict Documentation](https://docs.python.org/3/library/typing.html#typing.TypedDict)

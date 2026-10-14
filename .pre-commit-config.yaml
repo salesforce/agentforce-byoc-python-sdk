@@ -1,0 +1,48 @@
+repos:
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+      - id: check-toml
+      - id: check-added-large-files
+      - id: check-merge-conflict
+
+  - repo: https://github.com/psf/black
+    rev: 26.5.1
+    hooks:
+      - id: black
+
+  - repo: https://github.com/pycqa/isort
+    rev: 5.13.2
+    hooks:
+      - id: isort
+        args: ["--profile", "black"]
+
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.6.9
+    hooks:
+      - id: ruff
+        args: ["--fix"]
+
+  - repo: https://github.com/codespell-project/codespell
+    rev: v2.3.0
+    hooks:
+      - id: codespell
+        additional_dependencies: ["tomli"]
+
+  - repo: local
+    hooks:
+      - id: add-copyright-header
+        name: add Apache SPDX copyright header
+        entry: python3 scripts/add_copyright_header.py
+        language: system
+        types: [python]
+      - id: mypy
+        name: mypy
+        entry: poetry run mypy agentforce_byoc
+        language: system
+        pass_filenames: false
+        # Slow; run on-demand (make lint / CI) rather than every commit.
+        stages: [manual]

@@ -1,0 +1,103 @@
+[build-system]
+requires = ["poetry-core>=1.0.0", "poetry-dynamic-versioning>=1.0.0,<2.0.0"]
+build-backend = "poetry_dynamic_versioning.backend"
+
+[tool.poetry]
+name = "sfdc-agentforce-byoc-python-sdk"
+version = "0.0.0"  # placeholder; real version is injected at build time by poetry-dynamic-versioning
+description = "Python SDK for Agentforce BYOC (Bring Your Own Code)"
+authors = []
+license = "Apache-2.0"
+readme = "README.md"
+homepage = "https://github.com/salesforce/agentforce-byoc-python-sdk"
+repository = "https://github.com/salesforce/agentforce-byoc-python-sdk"
+keywords = ["agentforce", "byoc", "salesforce", "sdk"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: Apache Software License",
+    "Operating System :: OS Independent",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+]
+packages = [{include = "agentforce_byoc"}]
+
+[tool.poetry-dynamic-versioning]
+enable = true
+vcs = "git"
+style = "pep440"
+
+[tool.poetry-dynamic-versioning.substitution]
+files = ["agentforce_byoc/__init__.py"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+pydantic = "^2.0.0"
+click = "^8.1.7"
+pyyaml = "^6.0"
+
+[tool.poetry.group.dev.dependencies]
+# black/isort pinned to the .pre-commit-config.yaml revs so `make format` and `make lint` agree.
+black = "26.5.1"
+isort = "5.13.2"
+mypy = ">=1.0.0"
+pre-commit = ">=3.5.0"
+
+[tool.poetry.group.test.dependencies]
+pytest = ">=7.0.0"
+pytest-mock = ">=3.14.0"
+pytest-cov = ">=4.0.0"
+coverage = ">=7.0.0"
+
+[tool.poetry.scripts]
+agentforce = "agentforce_byoc.cli:cli"
+
+[tool.black]
+line-length = 100
+target-version = ['py311']
+include = '\.pyi?$'
+exclude = '''
+/(
+    \.git
+    | \.venv
+    | build
+    | dist
+)/
+'''
+
+[tool.isort]
+profile = "black"
+line_length = 100
+
+[tool.ruff]
+line-length = 100
+target-version = "py311"
+
+[tool.ruff.lint]
+# Conservative set: pyflakes (F) + pycodestyle errors/warnings (E/W).
+# Black owns line length, so E501 is disabled here.
+select = ["E", "F", "W"]
+ignore = ["E501"]
+
+[tool.codespell]
+skip = "./.git,./dist,./.venv,poetry.lock,*.template"
+
+[tool.mypy]
+python_version = "3.11"
+warn_return_any = true
+warn_unused_configs = true
+ignore_missing_imports = true
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+python_files = ["test_*.py", "*_test.py"]
+addopts = "-v --tb=short"
+
+[tool.coverage.run]
+source = ["agentforce_byoc"]
+omit = ["tests/*"]
+
+[tool.coverage.report]
+show_missing = true

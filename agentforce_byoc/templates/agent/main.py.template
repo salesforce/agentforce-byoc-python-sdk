@@ -1,0 +1,149 @@
+"""{{project_name}} - Agentforce BYOC Agent."""
+
+import json
+from typing import TypedDict
+
+# The agentforce_byoc SDK is vendored into this project directory (it is not
+# yet on PyPI). Importing it gives access to the relay client + helpers.
+from agentforce_byoc import get_client, get_logger
+from agentforce_byoc.schema_utils import entry_func, requestSchema, responseSchema
+
+logger = get_logger(__name__)
+
+# Default prompt for the local-run sample request only (see `main`). A real
+# invoke must supply `text`; `function` returns an input error if it is missing.
+_DEFAULT_PROMPT = "Hello, Agentforce, What is the best place to eat dumplings in Seattle!"
+
+
+# TODO: Define your function schemas here.
+class ExampleRequest(TypedDict):
+    """Request schema - define your input fields here."""
+
+    text: str
+
+
+class ExampleResponse(TypedDict):
+    """Response schema - define your output fields here."""
+
+    result: str
+    status: str
+
+
+@entry_func
+@requestSchema(ExampleRequest)
+@responseSchema(ExampleResponse)
+def function(request: dict) -> dict:
+    """
+    Entry point called by the Agentforce BYOC runtime.
+
+    Relays a chat-generations call through the Agentforce Relay API.
+
+    Args:
+        request: Input request dictionary from Agentforce. Expected fields:
+                 - text: the user message
+
+    Returns:
+        Response dictionary {"result": ..., "status": ...}
+
+    TODO: Implement your agent logic here.
+    """
+    logger.info("Processing request", extra={"request_keys": list(request.keys())})
+
+    # Validate the caller-supplied `text`. Missing, null, or empty `text` is an
+    # invalid invoke: return an input error instead of calling the relay, so an
+    # empty invocation never incurs model traffic. (`_DEFAULT_PROMPT` is only for
+    # local runs — `main()` uses it when there is no runtime-bound input.)
+    text = request.get("text")
+    if not text:
+        logger.warning("Missing or empty 'text' field in request")
+        return {"result": "", "status": "error"}
+
+    try:
+        client = get_client()
+
+        # Relay a chat-generations call. `parameter` is the raw request body
+        # for the LLM chat service and is passed through to the Relay API. The
+        # tenant id, user id, and app context are resolved from the
+        # runtime-injected environment (SFDC_CORE_TENANT_ID / SFDC_USER_ID /
+        # SFDC_APP_CONTEXT).
+        relay_response = client.call_llm_chat_generations(
+            parameter={
+                "messages": [{"role": "user", "content": text}],
+                "generation_settings": {"max_tokens": 50},
+                "model": "llmgateway__EinsteinLlama4Maverick",
+            },
+        )
+
+        logger.info("Relay response received")
+        return {"result": str(relay_response), "status": "success"}
+
+    except Exception as e:
+        logger.error(f"Request processing failed: {e}", exc_info=True)
+        return {"result": "", "status": "error"}
+
+
+# ============================================================================
+# Module-Level State (Optional)
+# ============================================================================
+# If you need state that persists across requests, use module-level variables:
+#
+# _request_count = 0
+# _cache = {}
+#
+# def function(request: dict) -> dict:
+#     global _request_count
+#     _request_count += 1
+#     ...
+
+
+# ============================================================================
+# Entry Point for Managed Sandbox / Module Execution
+# ============================================================================
+def main():
+    """
+    Entry point for Agentforce runtime execution.
+
+    - Agentforce runtime: import main; main.main()
+    - Script execution: python main.py (calls main via __name__ == "__main__")
+
+    The invoke's ``input`` payload is bound by the runtime as the module global
+    ``byoc_input`` before this file runs. We read it and pass it straight to
+    ``function``. When running locally (``python main.py``), that global is not
+    bound, so we fall back to a sample request. Only an *unbound* global selects
+    the sample — a request the runtime explicitly binds is respected as-is, even
+    an empty ``{}`` or ``None``, so an in-runtime invoke never silently runs the
+    local sample.
+    """
+    print("Testing {{project_name}} agent...")
+    print()
+
+    # `byoc_input` is injected by the Agentforce runtime from the invoke's
+    # `input` field. A unique sentinel as the `globals().get(...)` default lets
+    # us distinguish "the runtime never bound the global" (local run → use the
+    # sample) from "the runtime bound it to None/{}" (respect it). A plain
+    # `is None` check would conflate the two and run the sample on a real null
+    # invoke.
+    # TODO: replace the placeholder request text used for local runs.
+    _UNBOUND = object()
+    request = globals().get("byoc_input", _UNBOUND)
+    if request is _UNBOUND:
+        request = {"text": _DEFAULT_PROMPT}
+
+    print(f"Request: {request}")
+    response = function(request)
+    print(f"Response: {response}")
+
+    # Emit the response as a `result: <json>` line. The Agentforce runtime scans
+    # stdout for this line and returns the parsed value as the invoke response's
+    # `result` field; without it, `result` comes back null.
+    print(f"result: {json.dumps(response)}")
+    print()
+
+    return response
+
+
+# ============================================================================
+# Local Testing
+# ============================================================================
+if __name__ == "__main__":
+    main()
