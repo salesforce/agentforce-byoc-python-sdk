@@ -37,6 +37,10 @@ jobs:
     environment:
       name: pypi
       url: https://pypi.org/project/sfdc-agentforce-byoc-python-sdk/
+    permissions:
+      # Trusted publishing: PyPI authenticates this job via its GitHub OIDC token, so no API token is stored.
+      id-token: write
+      contents: read
     steps:
       - uses: actions/checkout@v4
         with:
@@ -54,6 +58,4 @@ jobs:
       - name: Build package
         run: make package
       - name: Publish to PyPI
-        env:
-          PYPI_TOKEN: ${{ secrets.PYPI_TOKEN }}
-        run: poetry publish --username __token__ --password "$PYPI_TOKEN"
+        uses: pypa/gh-action-pypi-publish@release/v1
